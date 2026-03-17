@@ -1,0 +1,109 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum ValidationRunStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+enum StageStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+enum StageType {
+  SETUP
+  LINT
+  TEST
+  BUILD
+  DEPLOY
+}
+
+enum CleanupJobType {
+  AGE_BASED
+  COUNT_BASED
+}
+
+enum CleanupJobStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
+model ValidationRun {
+  id          String               @id @default(uuid())
+  branchName  String
+  commitSha   String
+  status      ValidationRunStatus @default(PENDING)
+  config      Json
+  userId      String
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  completedAt DateTime?
+  cancelledAt DateTime?
+
+  stages RunStage[]
+
+  @@index([branchName, status])
+  @@index([branchName, commitSha])
+  @@index([branchName, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("validation_runs")
+}
+
+model RunStage {
+  id          String      @id @default(uuid())
+  runId       String
+  stageName   StageType
+  stageIndex  Int
+  status      StageStatus @default(PENDING)
+  logs        String      @default("")
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  run ValidationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, stageIndex])
+  @@index([runId, stageIndex])
+  @@map("run_stages")
+}
+
+model ValidationPreset {
+  id           String   @id @default(uuid())
+  userId       String
+  name         String
+  branchName  String?
+  commitSha  String?
+  envVars      Json     @default("{}")
+  featureFlags Json     @default("{}")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("validation_presets")
+}
+
+model CleanupJob {
+  id           String           @id @default(uuid())
+  type         CleanupJobType
+  status       CleanupJobStatus @default(PENDING)
+  deletedCount Int              @default(0)
+  startedAt    DateTime         @default(now())
+  completedAt  DateTime?
+  errorMessage String?
+
+  @@map("cleanup_jobs")
+}
