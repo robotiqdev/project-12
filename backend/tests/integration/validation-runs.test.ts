@@ -412,3 +412,408 @@ describe('POST /api/validation-runs', () => {
     expect(mockEnqueue).not.toHaveBeenCalled();
   });
 });
+
+// ── GET /api/validation-runs (list) ─────────────────────────────────────────
+
+describe('GET /api/validation-runs', () => {
+  beforeEach(async () => {
+    await prisma.$executeRaw`TRUNCATE TABLE run_stages, validation_runs CASCADE`;
+    jest.clearAllMocks();
+    mockEnqueue.mockResolvedValue(undefined);
+  });
+
+  afterAll(async () => {
+    // prisma.$disconnect() already called in POST suite afterAll — no-op here
+  });
+
+  // ── Empty state ─────────────────────────────────────────────────────────
+
+  it('returns 200 with empty paginated response when no runs exist', async () => {
+    const response = await request(app)
+      .get('/api/validation-runs')
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      data: [],
+      total: 0,
+      page: 1,
+      limit: 20,
+    });
+  });
+
+  it('returns data array as an empty array when no runs exist', async () => {
+    const response = await request(app)
+      .get('/api/validation-runs')
+      .expect(200);
+
+    expect(Array.isArray(response.body.data)).toBe(true);
+    expect(response.body.data).toHaveLength(0);
+  });
+
+  // ── Pagination with 25 seeded runs ───────────────────────────────────────
+
+  it('returns first page of 20 runs with correct metadata when 25 runs are seeded', async () => {
+    // Seed 25 runs on different branches to avoid branch-lock conflicts
+    for (let i = 0; i < 25; i++) {
+      await prisma.validationRun.create({
+        data: {
+          branchName: `feature/seed-branch-${i}`,
+          commitSha: VALID_COMMIT_SHA,
+          userId: '',
+          config: {},
+          status: 'PENDING',
+        },
+      });
+    }
+
+    const response = await request(app)
+      .get('/api/validation-runs')
+      .expect(200);
+
+    expect(response.body.total).toBe(25);
+    expect(response.body.page).toBe(1);
+    expect(response.body.limit).toBe(20);
+    expect(response.body.data).toHaveLength(20);
+  });
+
+  it('returns second page with remaining 5 runs when page=2 and limit=20 with 25 runs seeded', async () => {
+    for (let i = 0; i < 25; i++) {
+      await prisma.validationRun.create({
+        data: {
+          branchName: `feature/page-test-branch-${i}`,
+          commitSha: VALID_COMMIT_SHA,
+          userId: '',
+          config: {},
+          status: 'PENDING',
+        },
+      });
+    }
+
+    const response = await request(app)
+      .get('/api/validation-runs?page=2')
+      .expect(200);
+
+    expect(response.body.total).toBe(25);
+    expect(response.body.page).toBe(2);
+    expect(response.body.data).toHaveLength(5);
+  });
+
+  it('returns runs ordered by createdAt descending (newest first)', async () => {
+    for (let i = 0; i < 3; i++) {
+      await prisma.validationRun.create({
+        data: {
+          branchName: `feature/order-test-${i}`,
+          commitSha: VALID_COMMIT_SHA,
+          userId: '',
+          config: {},
+          status: 'PENDING',
+        },
+      });
+    }
+
+    const response = await request(app)
+      .get('/api/validation-runs')
+      .expect(200);
+
+    const dates = response.body.data.map((r: { createdAt: string }) => new Date(r.createdAt).getTime());
+    for (let i = 1; i < dates.length; i++) {
+      expect(dates[i - 1]).toBeGreaterThanOrEqual(dates[i]);
+    }
+  });
+
+  // ── Filtering ────────────────────────────────────────────────────────────
+
+  it('returns only matching runs when filtering by branch=main', async () => {
+    await prisma.validationRun.create({
+      data: { branchName: 'main', commitSha: VALID_COMMIT_SHA, userId: '', config: {}, status: 'PENDING' },
+    });
+    await prisma.validationRun.create({
+      data: { branchName: 'feature/other', commitSha: VALID_COMMIT_SHA, userId: '', config: {}, status: 'PENDING' },
+    });
+
+    const response = await request(app)
+      .get('/api/validation-runs?branch=main')
+      .expect(200);
+
+    expect(response.body.total).toBe(1);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].branchName).toBe('main');
+  });
+
+  it('returns only RUNNING runs when filtering by status=RUNNING', async () => {
+    await prisma.validationRun.create({
+      data: { branchName: 'main', commitSha: VALID_COMMIT_SHA, userId: '', config: {}, status: 'RUNNING' },
+    });
+    await prisma.validationRun.create({
+      data: { branchName: 'feature/other', commitSha: VALID_COMMIT_SHA, userId: '', config: {}, status: 'PENDING' },
+    });
+
+    const response = await request(app)
+      .get('/api/validation-runs?status=RUNNING')
+      .expect(200);
+
+    expect(response.body.total).toBe(1);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].status).toBe('RUNNING');
+  });
+
+  it('returns only runs matching both branch=main and status=RUNNING when both filters applied', async () => {
+    // main + RUNNING — should be returned
+    await prisma.validationRun.create({
+      data: { branchName: 'main', commitSha: VALID_COMMIT_SHA, userId: '', config: {}, status: 'RUNNING' },
+    });
+    // main + PENDING — should NOT be returned
+    await prisma.validationRun.create({
+      data: { branchName: 'main', commitSha: VALID_COMMIT_SHA, userId: '', config: {}, status: 'PENDING' },
+    });
+    // feature + RUNNING — should NOT be returned
+    await prisma.validationRun.create({
+      data: { branchName: 'feature/other', commitSha: VALID_COMMIT_SHA, userId: '', config: {}, status: 'RUNNING' },
+    });
+
+    const response = await request(app)
+      .get('/api/validation-runs?branch=main&status=RUNNING')
+      .expect(200);
+
+    expect(response.body.total).toBe(1);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].branchName).toBe('main');
+    expect(response.body.data[0].status).toBe('RUNNING');
+  });
+
+  it('returns runs matching a partial commitSha prefix when filtering by commitSha', async () => {
+    const sha1 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const sha2 = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+    await prisma.validationRun.create({
+      data: { branchName: 'feature/sha-a', commitSha: sha1, userId: '', config: {}, status: 'PENDING' },
+    });
+    await prisma.validationRun.create({
+      data: { branchName: 'feature/sha-b', commitSha: sha2, userId: '', config: {}, status: 'PENDING' },
+    });
+
+    const response = await request(app)
+      .get('/api/validation-runs?commitSha=aaaa')
+      .expect(200);
+
+    expect(response.body.total).toBe(1);
+    expect(response.body.data[0].commitSha).toBe(sha1);
+  });
+
+  // ── Limit param / pagination boundaries ─────────────────────────────────
+
+  it('respects limit param and returns only that many results', async () => {
+    for (let i = 0; i < 10; i++) {
+      await prisma.validationRun.create({
+        data: { branchName: `feature/limit-${i}`, commitSha: VALID_COMMIT_SHA, userId: '', config: {}, status: 'PENDING' },
+      });
+    }
+
+    const response = await request(app)
+      .get('/api/validation-runs?limit=5')
+      .expect(200);
+
+    expect(response.body.limit).toBe(5);
+    expect(response.body.data).toHaveLength(5);
+    expect(response.body.total).toBe(10);
+  });
+
+  it('clamps limit to maximum of 100 when limit=200 is passed', async () => {
+    const response = await request(app)
+      .get('/api/validation-runs?limit=200')
+      .expect(200);
+
+    expect(response.body.limit).toBeLessThanOrEqual(100);
+  });
+
+  it('clamps limit to minimum of 1 when limit=0 is passed', async () => {
+    const response = await request(app)
+      .get('/api/validation-runs?limit=0')
+      .expect(200);
+
+    expect(response.body.limit).toBeGreaterThanOrEqual(1);
+  });
+
+  it('uses default limit of 20 when limit param is not provided', async () => {
+    const response = await request(app)
+      .get('/api/validation-runs')
+      .expect(200);
+
+    expect(response.body.limit).toBe(20);
+  });
+
+  it('uses default page of 1 when page param is not provided', async () => {
+    const response = await request(app)
+      .get('/api/validation-runs')
+      .expect(200);
+
+    expect(response.body.page).toBe(1);
+  });
+});
+
+// ── GET /api/validation-runs/:id (getById) ───────────────────────────────────
+
+describe('GET /api/validation-runs/:id', () => {
+  beforeEach(async () => {
+    await prisma.$executeRaw`TRUNCATE TABLE run_stages, validation_runs CASCADE`;
+    jest.clearAllMocks();
+    mockEnqueue.mockResolvedValue(undefined);
+  });
+
+  // ── Happy path ─────────────────────────────────────────────────────────
+
+  it('returns 200 with run and stages for a valid run id', async () => {
+    const run = await prisma.validationRun.create({
+      data: {
+        branchName: 'feature/get-by-id',
+        commitSha: VALID_COMMIT_SHA,
+        userId: '',
+        config: {},
+        status: 'PENDING',
+      },
+    });
+
+    await prisma.runStage.createMany({
+      data: [
+        { runId: run.id, stageName: 'SETUP', stageIndex: 0 },
+        { runId: run.id, stageName: 'LINT', stageIndex: 1 },
+        { runId: run.id, stageName: 'TEST', stageIndex: 2 },
+        { runId: run.id, stageName: 'BUILD', stageIndex: 3 },
+        { runId: run.id, stageName: 'DEPLOY', stageIndex: 4 },
+      ],
+    });
+
+    const response = await request(app)
+      .get(`/api/validation-runs/${run.id}`)
+      .expect(200);
+
+    expect(response.body).toHaveProperty('run');
+    expect(response.body).toHaveProperty('stages');
+    expect(response.body.run.id).toBe(run.id);
+    expect(Array.isArray(response.body.stages)).toBe(true);
+  });
+
+  it('returns stages array with 5 items (one per stage type) for a fully staged run', async () => {
+    const run = await prisma.validationRun.create({
+      data: {
+        branchName: 'feature/five-stages',
+        commitSha: VALID_COMMIT_SHA,
+        userId: '',
+        config: {},
+        status: 'PENDING',
+      },
+    });
+
+    await prisma.runStage.createMany({
+      data: [
+        { runId: run.id, stageName: 'SETUP', stageIndex: 0 },
+        { runId: run.id, stageName: 'LINT', stageIndex: 1 },
+        { runId: run.id, stageName: 'TEST', stageIndex: 2 },
+        { runId: run.id, stageName: 'BUILD', stageIndex: 3 },
+        { runId: run.id, stageName: 'DEPLOY', stageIndex: 4 },
+      ],
+    });
+
+    const response = await request(app)
+      .get(`/api/validation-runs/${run.id}`)
+      .expect(200);
+
+    expect(response.body.stages).toHaveLength(5);
+  });
+
+  it('returns correct run fields (id, branchName, commitSha, status) in the run object', async () => {
+    const run = await prisma.validationRun.create({
+      data: {
+        branchName: 'feature/field-check',
+        commitSha: VALID_COMMIT_SHA,
+        userId: '',
+        config: {},
+        status: 'RUNNING',
+      },
+    });
+
+    const response = await request(app)
+      .get(`/api/validation-runs/${run.id}`)
+      .expect(200);
+
+    expect(response.body.run).toMatchObject({
+      id: run.id,
+      branchName: 'feature/field-check',
+      commitSha: VALID_COMMIT_SHA,
+      status: 'RUNNING',
+    });
+  });
+
+  it('returns empty stages array when no stages have been created for the run', async () => {
+    const run = await prisma.validationRun.create({
+      data: {
+        branchName: 'feature/no-stages',
+        commitSha: VALID_COMMIT_SHA,
+        userId: '',
+        config: {},
+        status: 'PENDING',
+      },
+    });
+
+    const response = await request(app)
+      .get(`/api/validation-runs/${run.id}`)
+      .expect(200);
+
+    expect(response.body.stages).toHaveLength(0);
+  });
+
+  it('returns stages with correct fields (id, runId, stageName, stageIndex, status)', async () => {
+    const run = await prisma.validationRun.create({
+      data: {
+        branchName: 'feature/stage-fields',
+        commitSha: VALID_COMMIT_SHA,
+        userId: '',
+        config: {},
+        status: 'PENDING',
+      },
+    });
+
+    await prisma.runStage.createMany({
+      data: [
+        { runId: run.id, stageName: 'SETUP', stageIndex: 0 },
+        { runId: run.id, stageName: 'LINT', stageIndex: 1 },
+        { runId: run.id, stageName: 'TEST', stageIndex: 2 },
+        { runId: run.id, stageName: 'BUILD', stageIndex: 3 },
+        { runId: run.id, stageName: 'DEPLOY', stageIndex: 4 },
+      ],
+    });
+
+    const response = await request(app)
+      .get(`/api/validation-runs/${run.id}`)
+      .expect(200);
+
+    const firstStage = response.body.stages[0];
+    expect(firstStage).toMatchObject({
+      id: expect.any(String),
+      runId: run.id,
+      stageName: expect.any(String),
+      stageIndex: expect.any(Number),
+      status: expect.any(String),
+    });
+  });
+
+  // ── Not found ────────────────────────────────────────────────────────────
+
+  it('returns 404 for a run id that does not exist', async () => {
+    const unknownId = '00000000-0000-0000-0000-000000000000';
+
+    await request(app)
+      .get(`/api/validation-runs/${unknownId}`)
+      .expect(404);
+  });
+
+  it('returns a JSON body with an error field on 404', async () => {
+    const unknownId = '00000000-0000-0000-0000-000000000001';
+
+    const response = await request(app)
+      .get(`/api/validation-runs/${unknownId}`)
+      .expect(404);
+
+    expect(response.body).toHaveProperty('error');
+  });
+});
