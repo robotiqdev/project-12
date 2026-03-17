@@ -17,5 +17,7 @@ export const createRunSchema = z.object({
 const router = Router();
 
 router.post('/', validateBody(createRunSchema), validationRunsController.create);
+router.get('/', validationRunsController.list);
+router.get('/:id', validationRunsController.getById);
 
 export default router;
