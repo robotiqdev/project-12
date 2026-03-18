@@ -152,3 +152,104 @@ func TestHandleHealth_POST_Returns405(t *testing.T) {
 		t.Errorf("expected status 405 for POST /health, got %d", w.Code)
 	}
 }
+
+// newRoutedServer creates a Server via New() with a router and registered routes.
+func newRoutedServer() *Server {
+	cfg := Config{Addr: ":0", Version: "test"}
+	return New(cfg, health.NewTracker())
+}
+
+// TestRoute_Health_GET_Returns200 verifies that GET /health returns 200 via the router (ServeHTTP).
+func TestRoute_Health_GET_Returns200(t *testing.T) {
+	s := newRoutedServer()
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	w := httptest.NewRecorder()
+
+	s.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200 for GET /health, got %d", w.Code)
+	}
+}
+
+// TestRoute_Health_GET_NoAuthorizationHeaderRequired verifies that GET /health succeeds
+// without an Authorization header — the route is intentionally public.
+func TestRoute_Health_GET_NoAuthorizationHeaderRequired(t *testing.T) {
+	s := newRoutedServer()
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	// Deliberately do NOT set Authorization header.
+	w := httptest.NewRecorder()
+
+	s.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200 for unauthenticated GET /health, got %d", w.Code)
+	}
+}
+
+// TestRoute_Health_GET_WithAuthorizationHeader verifies that GET /health also succeeds
+// when an Authorization header is present (no auth middleware to reject it).
+func TestRoute_Health_GET_WithAuthorizationHeader(t *testing.T) {
+	s := newRoutedServer()
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req.Header.Set("Authorization", "Bearer sometoken")
+	w := httptest.NewRecorder()
+
+	s.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200 for GET /health with Authorization header, got %d", w.Code)
+	}
+}
+
+// TestRoute_Missing_GET_Returns404 verifies that an unregistered path returns 404.
+func TestRoute_Missing_GET_Returns404(t *testing.T) {
+	s := newRoutedServer()
+
+	req := httptest.NewRequest(http.MethodGet, "/missing", nil)
+	w := httptest.NewRecorder()
+
+	s.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected status 404 for GET /missing, got %d", w.Code)
+	}
+}
+
+// TestRoute_Unknown_Path_Returns404 verifies that an arbitrary unknown path returns 404.
+func TestRoute_Unknown_Path_Returns404(t *testing.T) {
+	s := newRoutedServer()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/unknown", nil)
+	w := httptest.NewRecorder()
+
+	s.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected status 404 for GET /api/v1/unknown, got %d", w.Code)
+	}
+}
+
+// TestRoute_Health_POST_Returns405 verifies that POST /health is rejected via the router.
+func TestRoute_Health_POST_Returns405(t *testing.T) {
+	s := newRoutedServer()
+
+	req := httptest.NewRequest(http.MethodPost, "/health", nil)
+	w := httptest.NewRecorder()
+
+	s.ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected status 405 for POST /health via router, got %d", w.Code)
+	}
+}
+
+// TestServer_ServeHTTP_IsHTTPHandler verifies that *Server implements http.Handler.
+func TestServer_ServeHTTP_IsHTTPHandler(t *testing.T) {
+	s := newRoutedServer()
+	var _ http.Handler = s
+	// If this compiles, *Server implements http.Handler.
+}
