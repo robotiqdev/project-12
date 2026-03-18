@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/robotiqdev/project-12/version"
 )
 
 // TestHandleVersion_StatusOK verifies that GET /version returns HTTP 200.
@@ -141,6 +143,94 @@ func TestRoute_PostVersion_Returns405(t *testing.T) {
 
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Errorf("expected status 405, got %d", rr.Code)
+	}
+}
+
+// TestIntegration_GetVersion_ReturnsVersionConstant verifies end-to-end that
+// a server constructed with version.Version returns that exact constant in the
+// JSON body when GET /version is called via ServeHTTP.
+func TestIntegration_GetVersion_ReturnsVersionConstant(t *testing.T) {
+	srv := New(Config{Version: version.Version})
+
+	req := httptest.NewRequest(http.MethodGet, "/version", nil)
+	rr := httptest.NewRecorder()
+
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+
+	var resp versionResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+
+	if resp.Version == "" {
+		t.Error("version field in response body must not be empty")
+	}
+
+	if resp.Version != version.Version {
+		t.Errorf("expected version %q (version.Version), got %q", version.Version, resp.Version)
+	}
+}
+
+// TestIntegration_VersionEndpoint is a table-driven integration test that exercises
+// the /version endpoint through the full server routing layer using version.Version.
+func TestIntegration_VersionEndpoint(t *testing.T) {
+	cases := []struct {
+		name           string
+		method         string
+		wantStatusCode int
+		wantJSON       bool
+	}{
+		{
+			name:           "GET returns 200",
+			method:         http.MethodGet,
+			wantStatusCode: http.StatusOK,
+			wantJSON:       true,
+		},
+		{
+			name:           "POST returns 405 Method Not Allowed",
+			method:         http.MethodPost,
+			wantStatusCode: http.StatusMethodNotAllowed,
+			wantJSON:       false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := New(Config{Version: version.Version})
+
+			req := httptest.NewRequest(tc.method, "/version", nil)
+			rr := httptest.NewRecorder()
+
+			srv.ServeHTTP(rr, req)
+
+			if rr.Code != tc.wantStatusCode {
+				t.Errorf("expected status %d, got %d", tc.wantStatusCode, rr.Code)
+			}
+
+			if tc.wantJSON {
+				ct := rr.Header().Get("Content-Type")
+				if ct != "application/json" {
+					t.Errorf("expected Content-Type %q, got %q", "application/json", ct)
+				}
+
+				var resp versionResponse
+				if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+					t.Fatalf("failed to decode JSON response body: %v", err)
+				}
+
+				if resp.Version == "" {
+					t.Error("version field in response body must not be empty")
+				}
+
+				if resp.Version != version.Version {
+					t.Errorf("expected version %q (version.Version), got %q", version.Version, resp.Version)
+				}
+			}
+		})
 	}
 }
 
