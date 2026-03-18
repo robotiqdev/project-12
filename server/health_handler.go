@@ -14,7 +14,12 @@ type healthResponse struct {
 func (s *Server) handleHealth() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		resp := healthResponse{UptimeSec: s.healthTracker.UptimeSeconds()}
+		data, err := json.Marshal(resp)
+		if err != nil {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		w.Write(data)
 	}
 }

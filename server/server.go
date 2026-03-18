@@ -11,5 +11,8 @@ type Server struct {
 
 // New creates a new Server with the given health tracker injected at construction time.
 func New(tracker *health.Tracker) *Server {
+	if tracker == nil {
+		panic("health tracker must not be nil")
+	}
 	return &Server{healthTracker: tracker}
 }
