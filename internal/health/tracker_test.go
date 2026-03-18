@@ -100,6 +100,37 @@ func TestNewTracker_IndependentTrackers(t *testing.T) {
 	}
 }
 
+// TestUptimeSeconds_ReturnsElapsedSeconds verifies that UptimeSeconds returns
+// the number of seconds elapsed since the tracker was created, using a mutable
+// now function that advances after construction.
+func TestUptimeSeconds_ReturnsElapsedSeconds(t *testing.T) {
+	fixedNow := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// nowTime starts at fixedNow; we advance it after the tracker is created.
+	nowTime := fixedNow
+	tracker := health.NewTracker(func() time.Time { return nowTime })
+
+	// Advance by 5 seconds — subsequent calls to the injected now() return the new time.
+	nowTime = fixedNow.Add(5 * time.Second)
+
+	got := tracker.UptimeSeconds()
+	if got != 5.0 {
+		t.Errorf("UptimeSeconds() = %v; want 5.0", got)
+	}
+}
+
+// TestUptimeSeconds_ZeroWhenNoTimeHasPassed verifies that UptimeSeconds returns
+// 0.0 when the now function returns the same time as when the tracker was created.
+func TestUptimeSeconds_ZeroWhenNoTimeHasPassed(t *testing.T) {
+	fixedNow := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	tracker := health.NewTracker(func() time.Time { return fixedNow })
+
+	got := tracker.UptimeSeconds()
+	if got != 0.0 {
+		t.Errorf("UptimeSeconds() = %v; want 0.0", got)
+	}
+}
+
 // TestNewTracker_StartTimeIsImmutable verifies that the start time does not
 // change over the lifetime of the tracker (i.e., it is captured once and frozen).
 func TestNewTracker_StartTimeIsImmutable(t *testing.T) {
