@@ -19,3 +19,8 @@ func NewTracker(now func() time.Time) *Tracker {
 func (t *Tracker) StartTime() time.Time {
 	return t.startTime
 }
+
+// UptimeSeconds returns the number of seconds elapsed since the Tracker was created.
+func (t *Tracker) UptimeSeconds() float64 {
+	return t.now().Sub(t.startTime).Seconds()
+}
