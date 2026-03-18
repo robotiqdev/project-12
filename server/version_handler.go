@@ -13,7 +13,12 @@ type versionResponse struct {
 func (s *Server) handleVersion() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		resp := versionResponse{Version: s.version}
+		data, err := json.Marshal(resp)
+		if err != nil {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		w.Write(data)
 	}
 }
