@@ -13,8 +13,7 @@ type healthResponse struct {
 // handleHealth returns an http.HandlerFunc that responds with server health info.
 func (s *Server) handleHealth() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// TODO: populate UptimeSec from s.healthTracker.UptimeSeconds()
-		resp := healthResponse{}
+		resp := healthResponse{UptimeSec: s.healthTracker.UptimeSeconds()}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}
