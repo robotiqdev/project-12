@@ -2,12 +2,13 @@ import type { Config } from "jest";
 
 const config: Config = {
   preset: "ts-jest",
-  testEnvironment: "node",
   globalSetup: "./tests/setup.ts",
+  testEnvironment: "node",
   transform: {
-    "^.+\\.tsx?$": "ts-jest",
+    "^.+\\.tsx?$": ["ts-jest", {}],
   },
   testMatch: ["**/*.test.ts"],
+  moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json"],
 };
 
 export default config;
