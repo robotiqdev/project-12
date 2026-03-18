@@ -253,3 +253,79 @@ func TestServer_ServeHTTP_IsHTTPHandler(t *testing.T) {
 	var _ http.Handler = s
 	// If this compiles, *Server implements http.Handler.
 }
+
+// testHealthResponse is a local mirror struct for decoding the health endpoint JSON response.
+type testHealthResponse struct {
+	Status    string  `json:"status"`
+	UptimeSec float64 `json:"uptime_seconds"`
+	Timestamp string  `json:"timestamp"`
+}
+
+// TestHandleHealth is an integration test for the /health endpoint using ServeHTTP.
+// It covers: GET 200 with correct body fields, POST 405, and no auth header required.
+func TestHandleHealth(t *testing.T) {
+	t.Run("GET returns 200 with correct body", func(t *testing.T) {
+		tracker := health.NewTracker()
+		srv := New(Config{Addr: ":0", Version: "test"}, tracker)
+
+		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		w := httptest.NewRecorder()
+
+		srv.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d", w.Code)
+		}
+
+		ct := w.Header().Get("Content-Type")
+		if ct != "application/json" {
+			t.Errorf("expected Content-Type application/json, got %q", ct)
+		}
+
+		var resp testHealthResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response body: %v", err)
+		}
+
+		if resp.Status != "ok" {
+			t.Errorf("expected status == \"ok\", got %q", resp.Status)
+		}
+
+		if resp.UptimeSec < 0 {
+			t.Errorf("expected uptime_seconds >= 0, got %f", resp.UptimeSec)
+		}
+
+		if _, err := time.Parse(time.RFC3339, resp.Timestamp); err != nil {
+			t.Errorf("expected timestamp to be valid RFC3339, got %q: %v", resp.Timestamp, err)
+		}
+	})
+
+	t.Run("POST returns 405", func(t *testing.T) {
+		tracker := health.NewTracker()
+		srv := New(Config{Addr: ":0", Version: "test"}, tracker)
+
+		req := httptest.NewRequest(http.MethodPost, "/health", nil)
+		w := httptest.NewRecorder()
+
+		srv.ServeHTTP(w, req)
+
+		if w.Code != http.StatusMethodNotAllowed {
+			t.Errorf("expected status 405 for POST /health, got %d", w.Code)
+		}
+	})
+
+	t.Run("GET without Authorization header returns 200", func(t *testing.T) {
+		tracker := health.NewTracker()
+		srv := New(Config{Addr: ":0", Version: "test"}, tracker)
+
+		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		// Deliberately do NOT set Authorization header — endpoint must be public.
+		w := httptest.NewRecorder()
+
+		srv.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("expected status 200 for unauthenticated GET /health, got %d", w.Code)
+		}
+	})
+}
