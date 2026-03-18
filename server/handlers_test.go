@@ -114,6 +114,36 @@ func TestHandleVersion_ResponseBodyIsValidJSON(t *testing.T) {
 	}
 }
 
+// TestRoute_GetVersion_Returns200 verifies that GET /version is reachable via
+// the server's routing layer and returns HTTP 200.
+func TestRoute_GetVersion_Returns200(t *testing.T) {
+	s := New(Config{Version: "1.0.0"})
+
+	req := httptest.NewRequest(http.MethodGet, "/version", nil)
+	rr := httptest.NewRecorder()
+
+	s.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rr.Code)
+	}
+}
+
+// TestRoute_PostVersion_Returns405 verifies that POST /version is rejected by the
+// routing layer with HTTP 405 Method Not Allowed, since only GET is registered.
+func TestRoute_PostVersion_Returns405(t *testing.T) {
+	s := New(Config{Version: "1.0.0"})
+
+	req := httptest.NewRequest(http.MethodPost, "/version", nil)
+	rr := httptest.NewRecorder()
+
+	s.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected status 405, got %d", rr.Code)
+	}
+}
+
 // TestHandleVersion_VersionNotImportedFromPackage verifies that the server uses
 // the version string from Config rather than importing the version package directly.
 // This tests the decoupling architecture: any string passed in Config.Version
