@@ -38,7 +38,7 @@ func TestHandleHealth_ContentTypeJSON(t *testing.T) {
 
 	s.handleHealth()(w, req)
 
-	ct := w.Header().Get("Content-Type")
+	ct := w.Result().Header.Get("Content-Type")
 	if ct != "application/json" {
 		t.Errorf("expected Content-Type application/json, got %q", ct)
 	}
