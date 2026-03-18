@@ -1,4 +1,6 @@
+// Package version provides the application version constant.
 package version
 
-// Version is the current version of the server — to be set by the implementation developer.
+// Version is the current release version of the server.
+// Update this value before each release.
 const Version = "0.1.0"

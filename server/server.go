@@ -1,3 +1,4 @@
+// Package server provides the HTTP server and handler logic.
 package server
 
 import (
@@ -9,6 +10,7 @@ import (
 // Config holds server configuration.
 type Config struct {
 	Addr    string
+	// Version is the application version string to expose via the /version endpoint.
 	Version string
 }
 

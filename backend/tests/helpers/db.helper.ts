@@ -2,6 +2,10 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+export async function disconnectPrisma(): Promise<void> {
+  await prisma.$disconnect();
+}
+
 export interface SeedRunsOptions {
   branches?: string[];
   statuses?: string[];
