@@ -12,10 +12,10 @@ type Tracker struct {
 // The now function is called once at construction to record the start time.
 // Pass time.Now for production use; pass a fixed function for testing.
 func NewTracker(now func() time.Time) *Tracker {
-	return nil // stub — implementation not yet provided
+	return &Tracker{startTime: now(), now: now}
 }
 
 // StartTime returns the time at which the Tracker was created.
 func (t *Tracker) StartTime() time.Time {
-	return time.Time{}
+	return t.startTime
 }
