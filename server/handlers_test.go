@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/robotiqdev/project-12/internal/health"
+	"github.com/robotiqdev/project-12/version"
 )
 
 // newTestServer creates a minimal Server for handler tests.
@@ -328,6 +329,113 @@ func TestHandleHealth_BodyIsValidJSON(t *testing.T) {
 	}
 }
 
+// TestHandleVersion_StatusOK verifies that GET /version returns HTTP 200.
+func TestHandleVersion_StatusOK(t *testing.T) {
+	s := New(Config{Version: "1.2.3"}, health.NewTracker(time.Now))
+	handler := s.handleVersion()
+
+	req := httptest.NewRequest(http.MethodGet, "/version", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rr.Code)
+	}
+}
+
+// TestHandleVersion_ContentTypeIsJSON verifies that GET /version sets Content-Type to application/json.
+func TestHandleVersion_ContentTypeIsJSON(t *testing.T) {
+	s := New(Config{Version: "1.2.3"}, health.NewTracker(time.Now))
+	handler := s.handleVersion()
+
+	req := httptest.NewRequest(http.MethodGet, "/version", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	ct := rr.Header().Get("Content-Type")
+	if ct != "application/json" {
+		t.Errorf("expected Content-Type %q, got %q", "application/json", ct)
+	}
+}
+
+// TestHandleVersion_BodyVersionFieldMatchesConfig verifies that the response body's
+// `version` field equals the version string used to construct the server.
+func TestHandleVersion_BodyVersionFieldMatchesConfig(t *testing.T) {
+	const testVersion = "2.5.0"
+	s := New(Config{Version: testVersion}, health.NewTracker(time.Now))
+	handler := s.handleVersion()
+
+	req := httptest.NewRequest(http.MethodGet, "/version", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	var resp versionResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+
+	if resp.Version != testVersion {
+		t.Errorf("expected version %q, got %q", testVersion, resp.Version)
+	}
+}
+
+// TestHandleVersion_DifferentVersionsReflected verifies that different version strings
+// passed at construction time appear correctly in the response.
+func TestHandleVersion_DifferentVersionsReflected(t *testing.T) {
+	cases := []struct {
+		name    string
+		version string
+	}{
+		{"semantic version", "1.0.0"},
+		{"pre-release", "0.1.0"},
+		{"patch version", "3.14.1"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := New(Config{Version: tc.version}, health.NewTracker(time.Now))
+			handler := s.handleVersion()
+
+			req := httptest.NewRequest(http.MethodGet, "/version", nil)
+			rr := httptest.NewRecorder()
+
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusOK {
+				t.Errorf("expected status 200, got %d", rr.Code)
+			}
+
+			var resp versionResponse
+			if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+				t.Fatalf("failed to decode response body: %v", err)
+			}
+
+			if resp.Version != tc.version {
+				t.Errorf("expected version %q, got %q", tc.version, resp.Version)
+			}
+		})
+	}
+}
+
+// TestHandleVersion_ResponseBodyIsValidJSON verifies that the response body is valid JSON.
+func TestHandleVersion_ResponseBodyIsValidJSON(t *testing.T) {
+	s := New(Config{Version: "0.1.0"}, health.NewTracker(time.Now))
+	handler := s.handleVersion()
+
+	req := httptest.NewRequest(http.MethodGet, "/version", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	var raw json.RawMessage
+	if err := json.NewDecoder(rr.Body).Decode(&raw); err != nil {
+		t.Errorf("response body is not valid JSON: %v", err)
+	}
+}
+
 // TestHandleHealth_POST_Returns405 verifies that POST /health returns HTTP 405 Method Not Allowed.
 func TestHandleHealth_POST_Returns405(t *testing.T) {
 	s := newTestServer()
@@ -511,4 +619,146 @@ func TestHandleHealth(t *testing.T) {
 			t.Errorf("expected status 200 for unauthenticated GET /health, got %d", w.Code)
 		}
 	})
+}
+
+// TestRoute_GetVersion_Returns200 verifies that GET /version is reachable via
+// the server's routing layer and returns HTTP 200.
+func TestRoute_GetVersion_Returns200(t *testing.T) {
+	s := New(Config{Version: "1.0.0"}, health.NewTracker(time.Now))
+
+	req := httptest.NewRequest(http.MethodGet, "/version", nil)
+	rr := httptest.NewRecorder()
+
+	s.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rr.Code)
+	}
+}
+
+// TestRoute_PostVersion_Returns405 verifies that POST /version is rejected by the
+// routing layer with HTTP 405 Method Not Allowed, since only GET is registered.
+func TestRoute_PostVersion_Returns405(t *testing.T) {
+	s := New(Config{Version: "1.0.0"}, health.NewTracker(time.Now))
+
+	req := httptest.NewRequest(http.MethodPost, "/version", nil)
+	rr := httptest.NewRecorder()
+
+	s.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected status 405, got %d", rr.Code)
+	}
+}
+
+// TestIntegration_GetVersion_ReturnsVersionConstant verifies end-to-end that
+// a server constructed with version.Version returns that exact constant in the
+// JSON body when GET /version is called via ServeHTTP.
+func TestIntegration_GetVersion_ReturnsVersionConstant(t *testing.T) {
+	srv := New(Config{Version: version.Version}, health.NewTracker(time.Now))
+
+	req := httptest.NewRequest(http.MethodGet, "/version", nil)
+	rr := httptest.NewRecorder()
+
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+
+	var resp versionResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+
+	if resp.Version == "" {
+		t.Error("version field in response body must not be empty")
+	}
+
+	if resp.Version != version.Version {
+		t.Errorf("expected version %q (version.Version), got %q", version.Version, resp.Version)
+	}
+}
+
+// TestIntegration_VersionEndpoint is a table-driven integration test that exercises
+// the /version endpoint through the full server routing layer using version.Version.
+func TestIntegration_VersionEndpoint(t *testing.T) {
+	cases := []struct {
+		name           string
+		method         string
+		wantStatusCode int
+		wantJSON       bool
+	}{
+		{
+			name:           "GET returns 200",
+			method:         http.MethodGet,
+			wantStatusCode: http.StatusOK,
+			wantJSON:       true,
+		},
+		{
+			name:           "POST returns 405 Method Not Allowed",
+			method:         http.MethodPost,
+			wantStatusCode: http.StatusMethodNotAllowed,
+			wantJSON:       false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := New(Config{Version: version.Version}, health.NewTracker(time.Now))
+
+			req := httptest.NewRequest(tc.method, "/version", nil)
+			rr := httptest.NewRecorder()
+
+			srv.ServeHTTP(rr, req)
+
+			if rr.Code != tc.wantStatusCode {
+				t.Errorf("expected status %d, got %d", tc.wantStatusCode, rr.Code)
+			}
+
+			if tc.wantJSON {
+				ct := rr.Header().Get("Content-Type")
+				if ct != "application/json" {
+					t.Errorf("expected Content-Type %q, got %q", "application/json", ct)
+				}
+
+				var resp versionResponse
+				if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+					t.Fatalf("failed to decode JSON response body: %v", err)
+				}
+
+				if resp.Version == "" {
+					t.Error("version field in response body must not be empty")
+				}
+
+				if resp.Version != version.Version {
+					t.Errorf("expected version %q (version.Version), got %q", version.Version, resp.Version)
+				}
+			}
+		})
+	}
+}
+
+// TestHandleVersion_VersionDecoupledFromPackage verifies that the server uses
+// the version string from Config rather than importing the version package directly.
+// This tests the decoupling architecture: any string passed in Config.Version
+// should appear verbatim in the response.
+func TestHandleVersion_VersionDecoupledFromPackage(t *testing.T) {
+	const customVersion = "custom-build-42"
+	s := New(Config{Version: customVersion}, health.NewTracker(time.Now))
+	handler := s.handleVersion()
+
+	req := httptest.NewRequest(http.MethodGet, "/version", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	var resp versionResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+
+	if resp.Version != customVersion {
+		t.Errorf("handler must use version from Config, expected %q, got %q", customVersion, resp.Version)
+	}
 }

@@ -40,4 +40,5 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // routes registers all HTTP routes on the server's mux.
 func (s *Server) routes() {
 	s.router.HandleFunc("/health", s.handleHealth())
+	s.router.HandleFunc("GET /version", s.handleVersion())
 }

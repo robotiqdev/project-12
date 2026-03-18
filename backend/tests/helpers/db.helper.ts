@@ -7,6 +7,7 @@ export interface SeedRunsOptions {
   statuses?: string[];
   timestamps?: Date[];
   opts?: Record<string, unknown>;
+  userId?: string;
 }
 
 export async function seedRuns(
@@ -15,6 +16,7 @@ export async function seedRuns(
 ): Promise<void> {
   const branches = options.branches ?? ["main"];
   const statuses = options.statuses ?? ["PENDING", "RUNNING", "SUCCESS", "FAILED", "CANCELLED"];
+  const userId = options.userId ?? "seed_user";
 
   const data = Array.from({ length: count }, (_, i) => ({
     id: crypto.randomUUID(),
@@ -22,7 +24,7 @@ export async function seedRuns(
     commitSha: `sha${i.toString().padStart(6, "0")}`,
     status: statuses[i % statuses.length] as never,
     config: { timeout: 300 },
-    userId: `seed_user_${i % 10}`,
+    userId: `${userId}_${i % 10}`,
     createdAt: options.timestamps?.[i] ?? new Date(Date.now() - i * 60_000),
     updatedAt: options.timestamps?.[i] ?? new Date(Date.now() - i * 60_000),
   }));
@@ -31,3 +33,4 @@ export async function seedRuns(
 }
 
 export { prisma };
+export default prisma;
