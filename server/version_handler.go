@@ -1,15 +1,19 @@
 package server
 
-import "net/http"
+import (
+	"encoding/json"
+	"net/http"
+)
 
 type versionResponse struct {
 	Version string `json:"version"`
 }
 
 // handleVersion returns an http.HandlerFunc that responds with the server version.
-// Implementation pending.
 func (s *Server) handleVersion() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// not yet implemented
+		resp := versionResponse{Version: s.version}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
 	}
 }
